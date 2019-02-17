@@ -1,1 +1,6 @@
 DataBases/*
+Model/__pycache__/*
+Model/model.ckpt*
+Model/checkpoint
+10*/
+ckpt/

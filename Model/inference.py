@@ -7,55 +7,6 @@ from PIL import Image
 import sys
 
 
-def init_model():
-    KeepProb_Dropout = 1
-    input_dim = 48*48
-
-    with tf.name_scope('input'):
-        x = tf.placeholder(tf.float32, [None, input_dim], name='x')
-        y_desired = tf.placeholder(tf.float32, [None, 2], name='y_desired')
-        ITM = tf.placeholder("bool", name='Is_Training_Mode')
-
-    with tf.name_scope('CNN'):
-        t = Layers.unflat(x, 48, 48, 1)
-        nbfilter = 16
-        nb_conv_per_block = 4
-        for k in range(4):
-            for i in range(nb_conv_per_block):
-                d = Layers.conv(t, nbfilter, 3, 1, ITM,
-                                'conv33_{}_{}'.format(k, i), KeepProb_Dropout)
-                t = tf.concat([t, d], axis=3)
-            t = Layers.maxpool(t, 2, 'pool')
-            t = Layers.conv(t, 32, 3, 1, ITM, 'conv11_{}'.format(k), KeepProb_Dropout)
-        t = Layers.flat(t)
-        t = Layers.fc(t, 50, ITM, 'fc_1', KeepProb_Dropout)
-        y = Layers.fc(t, 2, ITM, 'fc_2', KP_dropout=1.0, act=tf.nn.log_softmax)
-
-    with tf.name_scope('cross_entropy'):
-        diff = y_desired * y
-        with tf.name_scope('total'):
-            cross_entropy = -tf.reduce_mean(diff)
-        tf.summary.scalar('cross_entropy', cross_entropy)
-
-    with tf.name_scope('accuracy'):
-        with tf.name_scope('correct_prediction'):
-            correct_prediction = tf.equal(tf.argmax(y, 1), tf.argmax(y_desired, 1))
-        with tf.name_scope('accuracy'):
-            accuracy = tf.reduce_mean(tf.cast(correct_prediction, tf.float32))
-        tf.summary.scalar('accuracy', accuracy)
-
-    with tf.name_scope('learning_rate'):
-        global_step = tf.Variable(0, trainable=False)
-        learning_rate = tf.train.exponential_decay(1e-3, global_step, 1000, 0.75, staircase=True)
-
-    Acc_Train = tf.placeholder("float", name='Acc_Train')
-    Acc_Test = tf.placeholder("float", name='Acc_Test')
-
-    return x, y
-
-
-x, y = init_model()
-
 image_path = sys.argv[1]
 
 image = Image.open(image_path).convert('L')
@@ -63,12 +14,19 @@ image = image.resize((48, 48), Image.ANTIALIAS)
 plt.imshow(image, cmap='gray')
 image = np.reshape(image, (1, 48*48))
 
-saver = tf.train.Saver()
 
 with tf.Session() as sess:
     # Restore variables from Model
-    saver.restore(sess, "./ckpt/model.ckpt")
-    feed_dict = {x: image}
+    saver = tf.train.import_meta_graph('./ckpt/model.ckpt.meta')
+    saver.restore(sess, tf.train.latest_checkpoint('./ckpt/'))
+    #saver.restore(sess, "./ckpt/model.ckpt")
+    graph = tf.get_default_graph()
+
+    x = graph.get_tensor_by_name("input/x:0")
+    y = graph.get_tensor_by_name("CNN/fc_2/LogSoftmax:0")
+    ITM = graph.get_tensor_by_name("input/Is_Training_Mode:0")
+
+    feed_dict = {x: image, ITM: False}
     pred = sess.run(y, feed_dict)
     print(pred[0])
     label = np.argmax(pred[0])
